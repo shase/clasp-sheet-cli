@@ -182,22 +182,21 @@ clasp deploy --description "web app"
 #   出力の Deployment ID (AKfyc...) から URL を組み立てる:
 #     https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
 
-# 6) 設定を初期化
+# 6) 設定を初期化（webAppUrl / auth を保存。対象シートは都度 --url で指定できる）
 cd ..
 sheet init \
   --clasp-project ./apps-script \
   --script-id <SCRIPT_ID> \
-  --spreadsheet-id <SPREADSHEET_ID> \
-  --default-sheet <SHEET_NAME> \
   --web-app-url "https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec" \
   --auth clasp
 
-# 7) 診断 → 読み取り
+# 7) 診断 → 読み取り（対象は --url で指定。gid からタブも自動解決）
 sheet doctor
-sheet read --range A1:C5
+sheet read --url "https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit?gid=0" --range A1:C5
 ```
 
 > - `<SCRIPT_ID>` は `apps-script/.clasp.json` の `scriptId`。
+> - 決まった1シートを主に使うなら `sheet init` に `--spreadsheet-id <ID>`（任意）・`--default-sheet <SHEET_NAME>`（任意）を足しておくと、以降は `--url` なしで `sheet read --range ...` と書ける。
 > - `<SHEET_NAME>` はタブ名。日本語 UI の新規シートは `Sheet1` ではなく `シート1` のことがあるので `sheet list` で確認。
 > - 以降コードを変更したときの反映（再デプロイ）は [Updating / 更新（再デプロイ）](#updating--更新再デプロイ) を参照。
 
@@ -219,7 +218,7 @@ sheet read --range A1:C5
 | フィールド | 必須 | 説明 |
 |---|---|---|
 | `webAppUrl` | ✔ | 呼び出す Web アプリの `/exec` URL |
-| `spreadsheetId` | ✔ | 操作対象のスプレッドシート ID |
+| `spreadsheetId` | △ | 既定の操作対象スプレッドシート ID。毎回 `--url` を渡す運用なら省略可 |
 | `auth` |  | `clasp`（アクセストークンを clasp 資格情報から付与）/ `none`（既定・ヘッダなし） |
 | `defaultSheet` |  | `--sheet` 省略時に使うシート名 |
 | `token` |  | 各呼び出しに付与する**共有シークレット**（`SHEET_TOOL_TOKEN` と照合） |
@@ -248,6 +247,22 @@ sheet doctor      # 環境診断
 ```
 
 JSON 入力（`append` / `update`）は `--json <path>` / stdin / `--inline <json>` の 3 方式に対応。
+
+### 別のスプレッドシートを一時的に操作する（`--url`）
+
+`.sheet-tool.json` の `spreadsheetId` に縛られず、**その場で対象シートを切り替え**られます。データ系コマンド（`list` / `read` / `append` / `update` / `clear` / `create` / `delete` / `status`）は `--url` を受け付け、指定時は config の `spreadsheetId` より優先されます。共有する `webAppUrl` / `auth` は引き続き config から読むので、**シートごとに config を作る必要はありません**。
+
+```bash
+# フル URL をそのまま貼るだけ。URL 内の gid からタブ（シート）も自動解決される
+sheet read --url "https://docs.google.com/spreadsheets/d/<ID>/edit?gid=1822873528#gid=1822873528" --range A1:J20
+
+# スプレッドシート ID を直接渡してもよい（gid フラグメントの併記も可）
+sheet read --url "<ID>#gid=0" --range A1:C5
+sheet list --url "<ID>"
+```
+
+- `--url` に `gid` が含まれれば `--sheet` は省略可（`listSheets` で `sheetId===gid` のタブ名を解決）。`gid` が無い場合は `--sheet <name>` を明示する。
+- `--url` を使わなければ従来どおり config の `spreadsheetId` / `defaultSheet` で動作します（後方互換）。
 
 ## Updating / 更新（再デプロイ）
 

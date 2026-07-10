@@ -6,7 +6,7 @@ import { CliError, type ToolConfig } from './types.js';
 const configSchema = z.object({
   claspProjectPath: z.string().min(1),
   scriptId: z.string().min(1),
-  spreadsheetId: z.string().min(1),
+  spreadsheetId: z.string().min(1).optional(),
   defaultSheet: z.string().min(1).optional(),
   webAppUrl: z.string().url().optional(),
   token: z.string().min(1).optional(),
