@@ -11,7 +11,7 @@ async function main(): Promise<void> {
 
   program
     .name('sheet')
-    .description('Manipulate Google Sheets through Apps Script via clasp run')
+    .description('Manipulate Google Sheets through an Apps Script Web App over HTTP')
     .version('0.1.0');
 
   registerCommands(program);

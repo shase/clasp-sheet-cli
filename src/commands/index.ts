@@ -3,7 +3,7 @@ import process from 'node:process';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { ClaspExecutionAdapter } from '../clasp.js';
+import { WebAppExecutionAdapter } from '../webapp.js';
 import { loadConfig, resolveConfigPath, saveConfig } from '../config.js';
 import { CliError, type DoctorCheck, type ExecutionAdapter, type ToolConfig } from '../types.js';
 
@@ -22,13 +22,19 @@ export function registerCommands(program: Command): void {
     .requiredOption('--script-id <id>', 'Apps Script project ID')
     .requiredOption('--spreadsheet-id <id>', 'Target Spreadsheet ID')
     .option('--default-sheet <name>', 'default sheet name')
+    .requiredOption('--web-app-url <url>', 'Web App /exec URL the CLI calls over HTTP')
+    .option('--token <token>', 'shared secret sent with each Web App call (optional)')
+    .option('--auth <mode>', 'Web App auth: "clasp" (Bearer token from clasp login) or "none"', 'none')
     .action(async (options) => {
       const written = await saveConfig(
         {
           claspProjectPath: options.claspProject,
           scriptId: options.scriptId,
           spreadsheetId: options.spreadsheetId,
-          defaultSheet: options.defaultSheet
+          defaultSheet: options.defaultSheet,
+          webAppUrl: options.webAppUrl,
+          token: options.token,
+          auth: options.auth
         },
         options.config
       );
@@ -175,7 +181,7 @@ export function registerCommands(program: Command): void {
 }
 
 function createAdapter(config: ToolConfig): ExecutionAdapter {
-  return new ClaspExecutionAdapter(config);
+  return new WebAppExecutionAdapter(config);
 }
 
 function printDoctorChecks(checks: DoctorCheck[]): void {

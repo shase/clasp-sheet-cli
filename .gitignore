@@ -1,3 +1,16 @@
 node_modules/
 dist/
+
+# Local config with real scriptId / spreadsheetId / Web App URL
 .sheet-tool.json
+
+# clasp project state: contains real scriptId and a local absolute path (username)
+.clasp.json
+**/.clasp.json
+
+# Credentials / secrets — must never be committed
+.clasprc.json
+**/.clasprc.json
+creds*.json
+client_secret*.json
+*.pem

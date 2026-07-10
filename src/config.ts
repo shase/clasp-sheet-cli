@@ -7,7 +7,10 @@ const configSchema = z.object({
   claspProjectPath: z.string().min(1),
   scriptId: z.string().min(1),
   spreadsheetId: z.string().min(1),
-  defaultSheet: z.string().min(1).optional()
+  defaultSheet: z.string().min(1).optional(),
+  webAppUrl: z.string().url().optional(),
+  token: z.string().min(1).optional(),
+  auth: z.enum(['clasp', 'none']).optional()
 });
 
 export const DEFAULT_CONFIG_FILE = '.sheet-tool.json';
@@ -35,7 +38,7 @@ export async function loadConfig(configPath?: string): Promise<ToolConfig> {
   if (!exists) {
     throw new CliError(
       'Configuration file is missing.',
-      `Run: sheet init --clasp-project ./apps-script --script-id <SCRIPT_ID> --spreadsheet-id <SPREADSHEET_ID>`
+      `Run: sheet init --clasp-project ./apps-script --script-id <SCRIPT_ID> --spreadsheet-id <SPREADSHEET_ID> --web-app-url <EXEC_URL> --auth clasp`
     );
   }
 
