@@ -45,7 +45,7 @@ export function registerCommands(program: Command): void {
 
   program
     .command('doctor')
-    .description('Validate clasp and Apps Script execution environment')
+    .description('Validate Web App configuration and connectivity')
     .option('--config <path>', 'config file path')
     .action(async (options) => {
       const config = await loadConfig(options.config);
