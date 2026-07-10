@@ -16,10 +16,12 @@ Local CLI for manipulating Google Sheets through a Google Apps Script **Web App*
 Apps Script は「Spreadsheet を操作するバックエンド」、CLI は「それを叩く薄いフロント」という関係です。両者は次の RPC 契約でやり取りします。
 
 ```text
-request  : { "fn": "<関数名>", "params": [ ... ], "token": "<任意>" }
+request  : { "fn": "<関数名>", "params": [ ... ], "token": "<共有シークレット・任意>" }
 response : { "ok": true,  "result": <値> }
          | { "ok": false, "error": "<メッセージ>" }
 ```
+
+> 用語の区別: request の `token` は**共有シークレット**（後述の `SHEET_TOOL_TOKEN`）です。認証に使う **OAuth アクセストークン**（`Authorization: Bearer`、`clasp` 由来）とは別物で、両者を混同しないよう本 README では前者を「共有シークレット」、後者を「アクセストークン」と呼び分けます。
 
 ## Why HTTP (GCP-less) / なぜ Web アプリ方式か
 
@@ -144,7 +146,7 @@ sheet read --range A1:C5
 
 ```json
 {
-  "claspProjectPath": "./apps-script",
+  "claspProjectPath": "apps-script",
   "scriptId": "<SCRIPT_ID>",
   "spreadsheetId": "<SPREADSHEET_ID>",
   "defaultSheet": "シート1",
@@ -161,7 +163,9 @@ sheet read --range A1:C5
 | `defaultSheet` |  | `--sheet` 省略時に使うシート名 |
 | `webAppUrl` | ✔ | 呼び出す Web アプリの `/exec` URL |
 | `auth` |  | `clasp`（Bearer トークンを clasp 資格情報から付与）/ `none`（既定・ヘッダなし） |
-| `token` |  | 各呼び出しに付与する共有シークレット（後述） |
+| `token` |  | 各呼び出しに付与する**共有シークレット**（`SHEET_TOOL_TOKEN` と照合。OAuth アクセストークンとは別物） |
+
+> `scriptId` と `claspProjectPath` は `clasp push` / `deploy` の対象を指すメタ情報で、**実行時（`sheet read` 等）には参照されません**（Web アプリ呼び出しに使うのは `webAppUrl` と `auth` のみ）。`status` は表示しますが動作条件ではありません。
 
 ## Usage / 使い方
 
@@ -190,7 +194,7 @@ JSON 入力は 3 方式に対応: `--json <path>` / stdin / `--inline <json>`。
 ## Security / セキュリティ
 
 - **`.sheet-tool.json` / `apps-script/.clasp.json` はコミットしない**（`.gitignore` 済み）。exec URL・scriptId・ローカルパスを含みます。
-- 資格情報（`~/.clasprc.json`）はホーム配下にあり本リポジトリには含まれません。`--auth clasp` は実行時にそこから読み、**トークンを設定ファイルに保存しません**。
+- OAuth 資格情報（`~/.clasprc.json`）はホーム配下にあり本リポジトリには含まれません。`--auth clasp` は実行時にそこから **OAuth アクセストークン**を読み、**設定ファイルには保存しません**（`.sheet-tool.json` に入る `token` は下記の共有シークレットで、アクセストークンとは別物）。
 - `DOMAIN` / `MYSELF` アクセスにしておけば、URL が漏れても組織外/他人からは呼べません（`ANYONE_ANONYMOUS` は避ける）。
 - さらに保護したい場合は**共有シークレット**を併用:
   - スクリプトの **Script Property** に `SHEET_TOOL_TOKEN = <任意の値>`（エディタ → プロジェクトの設定 → スクリプト プロパティ）
@@ -247,8 +251,29 @@ npm run dev -- --help
 
 ## Architecture Philosophy / アーキテクチャ思想
 
-- **境界の固定**: Spreadsheet の業務ロジックは Apps Script に集約し、CLI は入出力と実行制御だけを担当する
-- **実行方式の交換可能性**: コマンドは抽象実行インターフェースに依存し、HTTP / 将来の MCP など別方式へ差し替え可能
-- **運用コスト最小化**: GCP プロジェクト・REST API クライアント・追加認証実装を避け、初期セットアップ負荷を下げる
-- **可観測性と自己診断**: `doctor` / `status` で環境問題を先に検出し、エラー時は復旧手順を提示する
-- **ローカルファースト**: npm 公開前提にせず、個人開発や自動化ジョブで即利用できる構成を維持する
+このツールの設計は「**Google Sheets を操作したいだけなのに、GCP プロジェクト・サービスアカウント・独自 OAuth 実装まで抱えたくない**」という一点から出発しています。以下はその帰結です。
+
+- **GCP レスを最優先の制約に置く**
+  実行を Apps Script API の `scripts.run` ではなく **Web アプリへの HTTP 呼び出し**に倒すのは、`scripts.run` が「呼び出し側 OAuth クライアントと同一の標準 GCP プロジェクト」を要求するためです。専用 GCP プロジェクト・OAuth クライアント JSON・サービスアカウント・API キーのいずれも持ち込まないことを、コスト削減ではなく**設計の起点**として扱います。
+
+- **バックエンド/フロントの境界を固定する**
+  Spreadsheet の業務ロジックは Apps Script（`Code.js` / `Spreadsheet.js`）に集約し、CLI は入出力・設定・HTTP 実行・整形だけを担当します。Node 側に業務ロジックを持たせません。
+
+- **認証は自前で持たず、`clasp` を土台として間借りする**
+  本ツールは `clasp` を2つの役割で使います — (1) **コード配信とデプロイ**（`clasp create` / `push` / `deploy`）、(2) **実行時の認証基盤**（`clasp login` が残す `~/.clasprc.json` のトークンを Bearer として再利用し、失効時は自動更新）。実行時に `clasp` バイナリを起動することはありませんが、**その資格情報には実行時も依存**します。「GCP や独自 OAuth を持ち込まない」代償として **clasp のログイン成果物に寄りかかる**、という割り切りを明示的に選んでいます。
+
+- **組織ポリシーを前提にしたアクセスモデル**
+  匿名 Web アプリ（`ANYONE_ANONYMOUS`）が管理者に禁止される環境を現実の既定とみなし、`DOMAIN` / `MYSELF` + Bearer トークンを標準にします。デプロイの `DOMAIN` 判定は **clasp のログインアカウント**が基準なので、対象シートにアクセスできるアカウントと一致させることを前提要件に含めます。
+
+- **実行方式は交換可能に保つ**
+  コマンドは抽象実行インターフェース `ExecutionAdapter` に依存します。現在は HTTP 実行に一本化していますが、将来 MCP や別トランスポートへ差し替えられる余地を残します（`scripts.run` に戻すことは GCP 依存を復活させるため意図的に採らない）。
+
+- **機微情報はリポジトリの外へ**
+  トークンは `~/.clasprc.json`（リポジトリ外）にのみ存在し、設定ファイルには保存しません。実 URL・scriptId・ローカルパスを含む `.sheet-tool.json` / `.clasp.json` は `.gitignore` 済みです。
+
+- **可観測性と自己診断 / ローカルファースト**
+  `doctor` / `status` で環境問題（URL・認証・ドメイン不一致）を先に検出し、復旧手順を提示します。npm 公開を前提とせず、個人開発や自動化ジョブから即使える構成を保ちます。
+
+### Trade-offs / 割り切り
+
+"GCP レス" は無償ではありません。その対価として本ツールは (a) **Web アプリのデプロイという運用**、(b) **`clasp` 資格情報への実行時依存**を受け入れています。純粋な「デプロイ専用の clasp 利用」にしたい場合は実行時トークンを clasp から切り離す必要があり、それは GCP プロジェクトや別のトークン源を招くため、GCP レスとは両立しません。この綱引きの中で、現状は「clasp を認証基盤として再利用する」点を最も低コストな現実解として選んでいます。
