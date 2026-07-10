@@ -21,7 +21,7 @@ export function registerCommands(program: Command): void {
     .option('--config <path>', 'config file path')
     .option('--clasp-project <path>', 'path to clasp project', './apps-script')
     .requiredOption('--script-id <id>', 'Apps Script project ID')
-    .requiredOption('--spreadsheet-id <id>', 'Target Spreadsheet ID')
+    .option('--spreadsheet-id <id>', 'default target Spreadsheet ID (optional; pass --url per command instead)')
     .option('--default-sheet <name>', 'default sheet name')
     .requiredOption('--web-app-url <url>', 'Web App /exec URL the CLI calls over HTTP')
     .option('--token <token>', 'shared secret sent with each Web App call (optional)')

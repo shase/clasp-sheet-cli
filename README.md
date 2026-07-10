@@ -182,22 +182,21 @@ clasp deploy --description "web app"
 #   出力の Deployment ID (AKfyc...) から URL を組み立てる:
 #     https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
 
-# 6) 設定を初期化
+# 6) 設定を初期化（webAppUrl / auth を保存。対象シートは都度 --url で指定できる）
 cd ..
 sheet init \
   --clasp-project ./apps-script \
   --script-id <SCRIPT_ID> \
-  --spreadsheet-id <SPREADSHEET_ID> \
-  --default-sheet <SHEET_NAME> \
   --web-app-url "https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec" \
   --auth clasp
 
-# 7) 診断 → 読み取り
+# 7) 診断 → 読み取り（対象は --url で指定。gid からタブも自動解決）
 sheet doctor
-sheet read --range A1:C5
+sheet read --url "https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit?gid=0" --range A1:C5
 ```
 
 > - `<SCRIPT_ID>` は `apps-script/.clasp.json` の `scriptId`。
+> - 決まった1シートを主に使うなら `sheet init` に `--spreadsheet-id <ID>`（任意）・`--default-sheet <SHEET_NAME>`（任意）を足しておくと、以降は `--url` なしで `sheet read --range ...` と書ける。
 > - `<SHEET_NAME>` はタブ名。日本語 UI の新規シートは `Sheet1` ではなく `シート1` のことがあるので `sheet list` で確認。
 > - 以降コードを変更したときの反映（再デプロイ）は [Updating / 更新（再デプロイ）](#updating--更新再デプロイ) を参照。
 
