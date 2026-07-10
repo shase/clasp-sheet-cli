@@ -105,7 +105,7 @@ export function registerCommands(program: Command): void {
   program
     .command('read')
     .description('Read a range from a sheet')
-    .requiredOption('--range <a1>', 'A1 range, for example A1:C20')
+    .option('--range <a1>', 'A1 range, for example A1:C20', 'A1:Z1000')
     .option('--sheet <name>', 'sheet name')
     .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config; gid selects the tab)')
     .option('--config <path>', 'config file path')
