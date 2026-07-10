@@ -1,7 +1,8 @@
 export interface ToolConfig {
   claspProjectPath: string;
   scriptId: string;
-  spreadsheetId: string;
+  /** Default target spreadsheet. Optional when every command passes --url. */
+  spreadsheetId?: string;
   defaultSheet?: string;
   /** Web App /exec URL the CLI calls over HTTP (GCP-less execution). */
   webAppUrl?: string;

@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { WebAppExecutionAdapter } from '../webapp.js';
 import { loadConfig, resolveConfigPath, saveConfig } from '../config.js';
+import { parseSpreadsheetRef } from '../spreadsheet.js';
 import { CliError, type DoctorCheck, type ExecutionAdapter, type ToolConfig } from '../types.js';
 
 type JsonInputOptions = {
@@ -63,22 +64,25 @@ export function registerCommands(program: Command): void {
   program
     .command('status')
     .description('Show config and backend connectivity')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config)')
     .option('--config <path>', 'config file path')
     .action(async (options) => {
       const configPath = resolveConfigPath(options.config);
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
 
+      const spreadsheetId = resolveSpreadsheet(options.url, config).spreadsheetId;
+
       const spinner = ora('Checking Apps Script backend').start();
       const ping = await adapter.invoke<{ ok: boolean; timestamp: string }>('ping', []);
-      const list = await adapter.invoke<{ count: number }>('listSheets', [config.spreadsheetId]);
+      const list = await adapter.invoke<{ count: number }>('listSheets', [spreadsheetId]);
       spinner.stop();
 
       console.log(chalk.cyan('Config'));
       console.log(`  file: ${configPath}`);
       console.log(`  claspProjectPath: ${config.claspProjectPath}`);
       console.log(`  scriptId: ${config.scriptId}`);
-      console.log(`  spreadsheetId: ${config.spreadsheetId}`);
+      console.log(`  spreadsheetId: ${spreadsheetId}`);
       console.log(`  defaultSheet: ${config.defaultSheet ?? '-'}`);
       console.log(chalk.cyan('Backend'));
       console.log(`  ping: ${ping.ok ? 'ok' : 'fail'} (${ping.timestamp})`);
@@ -87,12 +91,14 @@ export function registerCommands(program: Command): void {
 
   program
     .command('list')
-    .description('List sheets in the configured spreadsheet')
+    .description('List sheets in the target spreadsheet')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config)')
     .option('--config <path>', 'config file path')
     .action(async (options) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const result = await adapter.invoke<{ sheets: Array<{ name: string }> }>('listSheets', [config.spreadsheetId]);
+      const { spreadsheetId } = resolveSpreadsheet(options.url, config);
+      const result = await adapter.invoke<{ sheets: Array<{ name: string }> }>('listSheets', [spreadsheetId]);
       console.log(formatJson(result));
     });
 
@@ -101,12 +107,14 @@ export function registerCommands(program: Command): void {
     .description('Read a range from a sheet')
     .requiredOption('--range <a1>', 'A1 range, for example A1:C20')
     .option('--sheet <name>', 'sheet name')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config; gid selects the tab)')
     .option('--config <path>', 'config file path')
     .action(async (options) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const sheet = resolveSheet(options.sheet, config.defaultSheet);
-      const result = await adapter.invoke('readRange', [config.spreadsheetId, sheet, options.range]);
+      const ref = resolveSpreadsheet(options.url, config);
+      const sheet = await resolveSheet(adapter, ref, options.sheet, config.defaultSheet);
+      const result = await adapter.invoke('readRange', [ref.spreadsheetId, sheet, options.range]);
       console.log(formatJson(result));
     });
 
@@ -116,13 +124,15 @@ export function registerCommands(program: Command): void {
     .option('--sheet <name>', 'sheet name')
     .option('--json <path>', 'path to JSON file')
     .option('--inline <json>', 'inline JSON string')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config; gid selects the tab)')
     .option('--config <path>', 'config file path')
-    .action(async (options: JsonInputOptions & { sheet?: string; config?: string }) => {
+    .action(async (options: JsonInputOptions & { sheet?: string; url?: string; config?: string }) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const sheet = resolveSheet(options.sheet, config.defaultSheet);
+      const ref = resolveSpreadsheet(options.url, config);
+      const sheet = await resolveSheet(adapter, ref, options.sheet, config.defaultSheet);
       const rows = await readJsonInput(options);
-      const result = await adapter.invoke('appendRows', [config.spreadsheetId, sheet, rows]);
+      const result = await adapter.invoke('appendRows', [ref.spreadsheetId, sheet, rows]);
       console.log(formatJson(result));
     });
 
@@ -133,13 +143,15 @@ export function registerCommands(program: Command): void {
     .option('--sheet <name>', 'sheet name')
     .option('--json <path>', 'path to JSON file')
     .option('--inline <json>', 'inline JSON string')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config; gid selects the tab)')
     .option('--config <path>', 'config file path')
-    .action(async (options: JsonInputOptions & { range: string; sheet?: string; config?: string }) => {
+    .action(async (options: JsonInputOptions & { range: string; sheet?: string; url?: string; config?: string }) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const sheet = resolveSheet(options.sheet, config.defaultSheet);
+      const ref = resolveSpreadsheet(options.url, config);
+      const sheet = await resolveSheet(adapter, ref, options.sheet, config.defaultSheet);
       const values = await readJsonInput(options);
-      const result = await adapter.invoke('updateRange', [config.spreadsheetId, sheet, options.range, values]);
+      const result = await adapter.invoke('updateRange', [ref.spreadsheetId, sheet, options.range, values]);
       console.log(formatJson(result));
     });
 
@@ -148,34 +160,40 @@ export function registerCommands(program: Command): void {
     .description('Clear a range in a sheet')
     .requiredOption('--range <a1>', 'A1 range, for example A2:Z100')
     .option('--sheet <name>', 'sheet name')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config; gid selects the tab)')
     .option('--config <path>', 'config file path')
     .action(async (options) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const sheet = resolveSheet(options.sheet, config.defaultSheet);
-      const result = await adapter.invoke('clearRange', [config.spreadsheetId, sheet, options.range]);
+      const ref = resolveSpreadsheet(options.url, config);
+      const sheet = await resolveSheet(adapter, ref, options.sheet, config.defaultSheet);
+      const result = await adapter.invoke('clearRange', [ref.spreadsheetId, sheet, options.range]);
       console.log(formatJson(result));
     });
 
   program
     .command('create <name>')
     .description('Create a new sheet')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config)')
     .option('--config <path>', 'config file path')
     .action(async (name, options) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const result = await adapter.invoke('createSheet', [config.spreadsheetId, name]);
+      const { spreadsheetId } = resolveSpreadsheet(options.url, config);
+      const result = await adapter.invoke('createSheet', [spreadsheetId, name]);
       console.log(formatJson(result));
     });
 
   program
     .command('delete <name>')
     .description('Delete an existing sheet')
+    .option('--url <sheetUrl|id>', 'target spreadsheet URL or ID (overrides config)')
     .option('--config <path>', 'config file path')
     .action(async (name, options) => {
       const config = await loadConfig(options.config);
       const adapter = createAdapter(config);
-      const result = await adapter.invoke('deleteSheet', [config.spreadsheetId, name]);
+      const { spreadsheetId } = resolveSpreadsheet(options.url, config);
+      const result = await adapter.invoke('deleteSheet', [spreadsheetId, name]);
       console.log(formatJson(result));
     });
 }
@@ -194,12 +212,54 @@ function printDoctorChecks(checks: DoctorCheck[]): void {
   }
 }
 
-function resolveSheet(input: string | undefined, fallback: string | undefined): string {
-  const resolved = input ?? fallback;
-  if (!resolved) {
-    throw new CliError('Sheet name is missing.', 'Provide --sheet <name> or set defaultSheet in config.');
+interface ResolvedSpreadsheet {
+  spreadsheetId: string;
+  gid?: number;
+  /** True when the spreadsheet came from --url rather than the config default. */
+  overridden: boolean;
+}
+
+function resolveSpreadsheet(url: string | undefined, config: ToolConfig): ResolvedSpreadsheet {
+  if (url) {
+    const ref = parseSpreadsheetRef(url);
+    return { spreadsheetId: ref.spreadsheetId, gid: ref.gid, overridden: true };
   }
-  return resolved;
+  if (config.spreadsheetId) {
+    return { spreadsheetId: config.spreadsheetId, overridden: false };
+  }
+  throw new CliError('Target spreadsheet is missing.', 'Pass --url <sheetUrl|id> or set spreadsheetId in config.');
+}
+
+async function resolveSheet(
+  adapter: ExecutionAdapter,
+  ref: ResolvedSpreadsheet,
+  sheetOption: string | undefined,
+  defaultSheet: string | undefined
+): Promise<string> {
+  if (sheetOption) {
+    return sheetOption;
+  }
+
+  if (ref.gid !== undefined) {
+    const { sheets } = await adapter.invoke<{ sheets: Array<{ name: string; sheetId: number }> }>('listSheets', [
+      ref.spreadsheetId
+    ]);
+    const match = sheets.find((sheet) => sheet.sheetId === ref.gid);
+    if (!match) {
+      throw new CliError(`No sheet found for gid=${ref.gid}.`, 'Pass --sheet <name> explicitly or check the URL.');
+    }
+    return match.name;
+  }
+
+  // defaultSheet only applies to the config's own spreadsheet, not a --url override.
+  if (!ref.overridden && defaultSheet) {
+    return defaultSheet;
+  }
+
+  throw new CliError(
+    'Sheet name is missing.',
+    'Provide --sheet <name>, include a gid in --url, or set defaultSheet in config.'
+  );
 }
 
 async function readJsonInput(options: JsonInputOptions): Promise<unknown> {
