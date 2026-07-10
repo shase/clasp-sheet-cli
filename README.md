@@ -231,6 +231,7 @@ sheet list
 
 sheet read --sheet Sales --range A1:C20
 sheet read --range A1:C20                 # --sheet 省略時は defaultSheet
+sheet read                                # --range 省略時は既定の A1:Z1000 を読む
 
 sheet append --sheet Sales --json rows.json
 cat rows.json | sheet append --sheet Sales
@@ -247,6 +248,8 @@ sheet doctor      # 環境診断
 ```
 
 JSON 入力（`append` / `update`）は `--json <path>` / stdin / `--inline <json>` の 3 方式に対応。
+
+> `sheet read` の `--range` は**省略可**で、既定は `A1:Z1000`（26 列 × 1000 行）です。**それより広い範囲を見たいときは `--range` を明示**してください（例: 数万行なら `--range A1:Z50000`）。既定を超える行はサイレントに取りこぼします。行数を先に見積もりたいときは、幅 1 列だけ広めに読んで非空セルを数えるとよいです（例: `sheet read --range A1:A100000 | jq '[.values[] | select(.[0] != "")] | length'`）。
 
 ### 別のスプレッドシートを一時的に操作する（`--url`）
 
